@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ProTask PWA</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        :root { --primary: #6366f1; --bg: #0f172a; --card: #1e293b; --text: #f8fafc; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 400px; }
+        .card { background: var(--card); padding: 20px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 14px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-add { background: var(--primary); color: white; }
+        .btn-stop { background: #ef4444; color: white; margin-top: 10px; display: none; }
+        .task-item { background: #334155; padding: 15px; border-radius: 12px; margin-top: 10px; display: flex; justify-content: space-between; align-items: center; }
+        #overlay { position: fixed; inset: 0; background: var(--bg); z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div id="overlay">
+    <h2>ProTask System</h2>
+    <p>Click to enable Audio & Notifications</p>
+    <button class="btn-add" style="width:200px" onclick="startApp()">ACTIVATE</button>
+</div>
+
+<div class="container">
+    <div class="card">
+        <h3>New Reminder</h3>
+        <input type="text" id="name" placeholder="Task Name">
+        <input type="datetime-local" id="time">
+        <button class="btn-add" onclick="addTask()">Set Alarm</button>
+        <button id="stopBtn" class="btn-stop" onclick="stopSiren()">STOP ALARM</button>
+    </div>
+    <div id="list"></div>
+</div>
+
+<audio id="siren" loop playsinline>
+    <source src="https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+    let tasks = JSON.parse(localStorage.getItem('tasks')) || [];
+    const siren = document.getElementById('siren');
+
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+    }
+
+    async function startApp() {
+        siren.play().then(() => { siren.pause(); siren.currentTime = 0; });
+        if ("Notification" in window) await Notification.requestPermission();
+        document.getElementById('overlay').style.display = 'none';
+        render();
+    }
+
+    function addTask() {
+        const name = document.getElementById('name').value;
+        const time = new Date(document.getElementById('time').value).getTime();
+        if (!name || !time) return;
+        tasks.push({ id: Date.now(), name, time, alerted: false });
+        localStorage.setItem('tasks', JSON.stringify(tasks));
+        render();
+    }
+
+    setInterval(() => {
+        const now = Date.now();
+        tasks.forEach(t => {
+            if (t.time <= now && !t.alerted) {
+                t.alerted = true;
+                siren.play();
+                document.getElementById('stopBtn').style.display = 'block';
+                if (Notification.permission === "granted") {
+                    navigator.serviceWorker.ready.then(reg => {
+                        reg.showNotification("Task Due!", { body: t.name, icon: "https://cdn-icons-png.flaticon.com/512/1827/1827347.png" });
+                    });
+                }
+                render();
+            }
+        });
+    }, 1000);
+
+    function stopSiren() {
+        siren.pause(); siren.currentTime = 0;
+        document.getElementById('stopBtn').style.display = 'none';
+    }
+
+    function render() {
+        document.getElementById('list').innerHTML = tasks.map(t => `
+            <div class="task-item">
+                <span>${t.name}</span>
+                <button onclick="deleteTask(${t.id})" style="width:auto; background:none; color:#ef4444">✕</button>
+            </div>
+        `).join('');
+    }
+
+    function deleteTask(id) {
+        tasks = tasks.filter(t => t.id !== id);
+        localStorage.setItem('tasks', JSON.stringify(tasks));
+        render();
+    }
+</script>
+</body>
+</html>
